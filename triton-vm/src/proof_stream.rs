@@ -170,6 +170,7 @@ mod tests {
     use twenty_first::shared_math::tip5::Tip5;
     use twenty_first::shared_math::x_field_element::XFieldElement;
     use twenty_first::util_types::merkle_tree::MerkleTree;
+    use twenty_first::util_types::merkle_tree::MerkleTreeInclusionProof;
     use twenty_first::util_types::merkle_tree_maker::MerkleTreeMaker;
 
     use crate::proof_item::FriResponse;
@@ -208,15 +209,17 @@ mod tests {
         let codeword_len = 32;
         let fri_codeword: Vec<XFieldElement> = random_elements(rng.next_u64(), codeword_len);
         let fri_codeword_digests = fri_codeword.iter().map(|&x| x.into()).collect_vec();
-        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&fri_codeword_digests);
-        let root = merkle_tree.get_root();
+        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&fri_codeword_digests).unwrap();
+        let root = merkle_tree.root();
 
         let num_revealed_indices = rng.gen_range(1..=codeword_len);
         let revealed_indices = random_elements(rng.next_u64(), num_revealed_indices)
             .into_iter()
             .map(|idx: usize| idx % codeword_len)
             .collect_vec();
-        let auth_structure = merkle_tree.get_authentication_structure(&revealed_indices);
+        let auth_structure = merkle_tree
+            .authentication_structure(&revealed_indices)
+            .unwrap();
 
         let ood_base_row = random_elements(rng.next_u64(), NUM_BASE_COLUMNS);
         let ood_ext_row = random_elements(rng.next_u64(), NUM_EXT_COLUMNS);
@@ -307,9 +310,11 @@ mod tests {
         let num_leaves = 1 << tree_height;
         let leaf_values: Vec<XFieldElement> = random_elements(num_leaves);
         let leaf_digests = leaf_values.iter().map(|&xfe| xfe.into()).collect_vec();
-        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&leaf_digests);
+        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&leaf_digests).unwrap();
         let indices_to_check = vec![5, 173, 175, 167, 228, 140, 252, 149, 232, 182, 5, 5, 182];
-        let auth_structure = merkle_tree.get_authentication_structure(&indices_to_check);
+        let auth_structure = merkle_tree
+            .authentication_structure(&indices_to_check)
+            .unwrap();
         let revealed_leaves = indices_to_check
             .iter()
             .map(|&idx| leaf_values[idx])
@@ -329,14 +334,27 @@ mod tests {
             auth_structure,
             revealed_leaves,
         } = maybe_same_fri_response;
-        let maybe_same_leaf_digests = revealed_leaves.iter().map(|&xfe| xfe.into()).collect_vec();
-        let verdict = MerkleTree::<H>::verify_authentication_structure(
-            merkle_tree.get_root(),
+        let maybe_same_leaf_digests = revealed_leaves
+            .iter()
+            .enumerate()
+            .map(|(i, &xfe)| (i, xfe.into()))
+            .collect_vec();
+
+        let proof = MerkleTreeInclusionProof::<H> {
             tree_height,
-            &indices_to_check,
-            &maybe_same_leaf_digests,
-            &auth_structure,
-        );
+            indexed_leaves: maybe_same_leaf_digests,
+            authentication_structure: auth_structure,
+            _hasher: Default::default(),
+        };
+        let verdict = proof.verify(merkle_tree.root());
+
+        // let verdict = MerkleTree::<H>::verify_authentication_structure(
+        //     merkle_tree.root(),
+        //     tree_height,
+        //     &indices_to_check,
+        //     &maybe_same_leaf_digests,
+        //     &auth_structure,
+        // );
         assert!(verdict);
     }
 

@@ -184,13 +184,13 @@ mod tests {
         #[strategy(Just(#_leaves.iter().map(|&x| x.into()).collect()))]
         _leaves_as_digests: Vec<Digest>,
 
-        #[strategy(Just(CpuParallel::from_digests(&#_leaves_as_digests)))]
+        #[strategy(Just(CpuParallel::from_digests(&#_leaves_as_digests).unwrap()))]
         _merkle_tree: MerkleTree<Tip5>,
 
         #[strategy(Just(#_revealed_indices.iter().map(|&i| #_leaves[i]).collect()))]
         revealed_leaves: Vec<XFieldElement>,
 
-        #[strategy(Just(#_merkle_tree.get_authentication_structure(&#_revealed_indices)))]
+        #[strategy(Just(#_merkle_tree.authentication_structure(&#_revealed_indices).unwrap()))]
         auth_structure: AuthenticationStructure,
     }
 

@@ -12,6 +12,7 @@ use twenty_first::shared_math::traits::Inverse;
 use twenty_first::shared_math::x_field_element::XFieldElement;
 use twenty_first::util_types::algebraic_hasher::AlgebraicHasher;
 use twenty_first::util_types::merkle_tree::MerkleTree;
+use twenty_first::util_types::merkle_tree::MerkleTreeInclusionProof;
 use twenty_first::util_types::merkle_tree_maker::MerkleTreeMaker;
 
 use crate::arithmetic_domain::ArithmeticDomain;
@@ -73,7 +74,7 @@ impl<'stream, H: AlgebraicHasher> FriProver<'stream, H> {
     }
 
     fn commit_to_round(&mut self, round: &ProverRound<H>) {
-        let merkle_root = round.merkle_tree.get_root();
+        let merkle_root = round.merkle_tree.root();
         let proof_item = ProofItem::MerkleRoot(merkle_root);
         self.proof_stream.enqueue(proof_item);
     }
@@ -139,7 +140,9 @@ impl<'stream, H: AlgebraicHasher> FriProver<'stream, H> {
         let revealed_leaves = indices.iter().map(|&i| codeword[i]).collect_vec();
 
         let merkle_tree = &self.rounds[round_number].merkle_tree;
-        let auth_structure = merkle_tree.get_authentication_structure(indices);
+        let auth_structure = merkle_tree
+            .authentication_structure(indices)
+            .expect("should get auth_structure");
 
         let fri_response = FriResponse {
             auth_structure,
@@ -162,7 +165,7 @@ impl<H: AlgebraicHasher> ProverRound<H> {
 
     fn merkle_tree_from_codeword(codeword: &[XFieldElement]) -> MerkleTree<H> {
         let digests = codeword_as_digests(codeword);
-        MTMaker::from_digests(&digests)
+        MTMaker::from_digests(&digests).unwrap()
     }
 
     fn split_and_fold(&self, folding_challenge: XFieldElement) -> Vec<XFieldElement> {
@@ -297,12 +300,12 @@ impl<'stream, H: AlgebraicHasher> FriVerifier<'stream, H> {
 
     fn receive_authentic_partially_revealed_codewords(&mut self) -> Result<()> {
         let auth_structure = self.receive_partial_codeword_a_for_first_round()?;
-        self.authenticate_partial_codeword_a_for_first_round(&auth_structure)?;
+        self.authenticate_partial_codeword_a_for_first_round(auth_structure.clone())?;
 
         let num_rounds_that_have_a_next_round = self.rounds.len() - 1;
         for round_number in 0..num_rounds_that_have_a_next_round {
             let auth_structure = self.receive_partial_codeword_b_for_round(round_number)?;
-            self.authenticate_partial_codeword_b_for_round(round_number, &auth_structure)?;
+            self.authenticate_partial_codeword_b_for_round(round_number, auth_structure.clone())?;
         }
         Ok(())
     }
@@ -343,23 +346,28 @@ impl<'stream, H: AlgebraicHasher> FriVerifier<'stream, H> {
 
     fn authenticate_partial_codeword_a_for_first_round(
         &self,
-        auth_structure: &AuthenticationStructure,
+        authentication_structure: AuthenticationStructure,
     ) -> Result<()> {
         let round = &self.rounds[0];
 
         let revealed_leaves = &round.partial_codeword_a;
         let revealed_digests = codeword_as_digests(revealed_leaves);
 
-        let merkle_tree_height = round.domain.length.ilog2() as usize;
-        let indices = &self.collinearity_check_a_indices_for_round(0);
+        let tree_height = round.domain.length.ilog2() as usize;
+        // let indices = &self.collinearity_check_a_indices_for_round(0);
 
-        match MerkleTree::<H>::verify_authentication_structure(
-            round.merkle_root,
-            merkle_tree_height,
-            indices,
-            &revealed_digests,
-            auth_structure,
-        ) {
+        let proof = MerkleTreeInclusionProof::<H> {
+            tree_height,
+            indexed_leaves: revealed_digests
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (i, v))
+                .collect(),
+            authentication_structure,
+            _hasher: Default::default(),
+        };
+
+        match proof.verify(round.merkle_root) {
             true => Ok(()),
             false => Err(BadMerkleAuthenticationPath),
         }
@@ -368,23 +376,28 @@ impl<'stream, H: AlgebraicHasher> FriVerifier<'stream, H> {
     fn authenticate_partial_codeword_b_for_round(
         &self,
         round_number: usize,
-        auth_structure: &AuthenticationStructure,
+        authentication_structure: AuthenticationStructure,
     ) -> Result<()> {
         let round = &self.rounds[round_number];
 
         let revealed_leaves = &round.partial_codeword_b;
         let revealed_digests = codeword_as_digests(revealed_leaves);
 
-        let merkle_tree_height = round.domain.length.ilog2() as usize;
-        let indices = &self.collinearity_check_b_indices_for_round(round_number);
+        let tree_height = round.domain.length.ilog2() as usize;
+        // let indices = &self.collinearity_check_b_indices_for_round(round_number);
 
-        match MerkleTree::<H>::verify_authentication_structure(
-            round.merkle_root,
-            merkle_tree_height,
-            indices,
-            &revealed_digests,
-            auth_structure,
-        ) {
+        let proof = MerkleTreeInclusionProof::<H> {
+            tree_height,
+            indexed_leaves: revealed_digests
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (i, v))
+                .collect(),
+            authentication_structure,
+            _hasher: Default::default(),
+        };
+
+        match proof.verify(round.merkle_root) {
             true => Ok(()),
             false => Err(BadMerkleAuthenticationPath),
         }
@@ -458,8 +471,8 @@ impl<'stream, H: AlgebraicHasher> FriVerifier<'stream, H> {
 
     fn last_round_codeword_merkle_root(&self) -> Digest {
         let codeword_digests = codeword_as_digests(&self.last_round_codeword);
-        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&codeword_digests);
-        merkle_tree.get_root()
+        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&codeword_digests).unwrap();
+        merkle_tree.root()
     }
 
     fn last_round_merkle_root(&self) -> Digest {

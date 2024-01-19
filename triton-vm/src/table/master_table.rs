@@ -291,7 +291,7 @@ where
     );
 
     /// Requires having called
-    /// [`low_degree_extend_all_columns`](Self::low_degree_extend_all_columns) first.    
+    /// [`low_degree_extend_all_columns`](Self::low_degree_extend_all_columns) first.
     fn interpolation_polynomials(&self) -> ArrayView1<Polynomial<XFieldElement>>;
 
     /// Get one row of the table at an arbitrary index. Notably, the index does not have to be in
@@ -308,7 +308,7 @@ where
         prof_stop!(maybe_profiler, "leafs");
 
         prof_start!(maybe_profiler, "Merkle tree");
-        let merkle_tree = MTMaker::from_digests(&hashed_rows);
+        let merkle_tree = MTMaker::from_digests(&hashed_rows).unwrap();
         prof_stop!(maybe_profiler, "Merkle tree");
 
         merkle_tree

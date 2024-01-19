@@ -2049,8 +2049,8 @@ pub(crate) mod tests {
         const TREE_HEIGHT: usize = 6;
         const NUM_LEAVES: usize = 1 << TREE_HEIGHT;
         let leaves: [_; NUM_LEAVES] = random_elements_array();
-        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&leaves);
-        let root = merkle_tree.get_root();
+        let merkle_tree: MerkleTree<H> = MTMaker::from_digests(&leaves).unwrap();
+        let root = merkle_tree.root();
 
         let num_authentication_paths = 3;
         let selected_leaf_indices = (0..num_authentication_paths)
@@ -2059,7 +2059,8 @@ pub(crate) mod tests {
 
         let auth_path_digests = selected_leaf_indices
             .iter()
-            .flat_map(|&leaf_index| merkle_tree.get_authentication_structure(&[leaf_index]))
+            .flat_map(|&leaf_index| merkle_tree.authentication_structure(&[leaf_index]))
+            .flatten()
             .collect();
         let non_determinism = NonDeterminism::new(vec![]).with_digests(auth_path_digests);
 
